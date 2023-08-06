@@ -1,0 +1,89 @@
+services:
+
+  php:
+    build:
+      context: .
+      dockerfile: .docker/php/Dockerfile
+    container_name: wp-php
+    hostname: php
+    volumes:
+      - ./wordpress:/app
+      - ./.env:/app/.env
+      - bedrock-vendor-folder:/app/vendor
+      - wp-folder:/app/web/wp
+
+  composer:
+    build:
+      context: .
+      dockerfile: .docker/composer/Dockerfile
+    container_name: wp-composer
+    depends_on:
+      - php
+    environment:
+      - COMPOSER_PROCESS_TIMEOUT=600
+    env_file:
+      - .env
+    hostname: composer
+    volumes:
+      - ./wordpress:/app
+      - bedrock-vendor-folder:/app/vendor
+      - sage-theme-vendor-folder:/app/web/app/themes/$PROJECT_NAME/vendor
+      - wp-folder:/app/web/wp
+
+  nodejs:
+    command: tail -F anything
+    container_name: wp-nodejs
+    environment:
+      - WATCHPACK_POLLING=true
+      - WDS_SOCKET_PORT=0
+    env_file:
+      - .env
+    hostname: nodejs
+    image: node:20-slim
+    ports:
+      - 3000:3000
+    volumes:
+      - ./wordpress:/app
+      - sage-theme-node_modules-folder:/app/web/app/themes/$PROJECT_NAME/node_modules
+
+
+  nginx:
+    container_name: wp-nginx
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://nginx.host.com"]
+      interval: 1m30s
+      timeout: 10s
+      retries: 5
+    hostname: nginx
+    image: nginx:1.25.1-alpine-slim
+    ports:
+      - 80:80
+      - 443:443
+    volumes:
+      - ./.docker/nginx/default.conf:/etc/nginx/conf.d/default.conf
+      - ./wordpress:/app:rw
+      - bedrock-vendor-folder:/app/vendor
+      - wp-folder:/app/web/wp
+
+  mysql:
+    command: --default-authentication-plugin=mysql_native_password
+    container_name: wp-db
+    env_file: .env
+    environment:
+      - MYSQL_RANDOM_ROOT_PASSWORD=true
+      - MYSQL_DATABASE=$DB_NAME
+      - MYSQL_USER=$DB_USER
+      - MYSQL_PASSWORD=$DB_PASSWORD
+    healthcheck:
+      test: ["CMD-SHELL", 'mysql --database=$$MYSQL_DATABASE --user=$$MYSQL_USER --password=$$MYSQL_PASSWORD --execute="SELECT count(table_name) > 0 FROM information_schema.tables;" --skip-column-names -B']
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    hostname: mysql
+    image: mysql:8
+
+volumes:
+  wp-folder:
+  bedrock-vendor-folder:
+  sage-theme-vendor-folder:
+  sage-theme-node_modules-folder:
